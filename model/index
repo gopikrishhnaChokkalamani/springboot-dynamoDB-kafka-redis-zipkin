@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>AI Chat</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            height: 100vh;
+            background: #0f172a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: "Segoe UI", Arial, sans-serif;
+        }
+
+        .chat-container {
+            width: 420px;
+            height: 600px;
+            background: #020617;
+            border-radius: 16px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+            overflow: hidden;
+        }
+
+        .header {
+            padding: 14px;
+            background: #020617;
+            border-bottom: 1px solid #1e293b;
+            text-align: center;
+            font-weight: bold;
+            color: #e5e7eb;
+        }
+
+        .session {
+            font-size: 12px;
+            color: #94a3b8;
+            margin-top: 4px;
+        }
+
+        .messages {
+            flex: 1;
+            padding: 14px;
+            overflow-y: auto;
+        }
+
+        .msg {
+            max-width: 80%;
+            padding: 12px 16px;
+            margin-bottom: 10px;
+            border-radius: 14px;
+            font-size: 14px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+
+        .user {
+            background: #2563eb;
+            color: white;
+            align-self: flex-end;
+            border-bottom-right-radius: 4px;
+        }
+
+        .ai {
+            background: #1e293b;
+            color: #e5e7eb;
+            align-self: flex-start;
+            border-bottom-left-radius: 4px;
+        }
+
+        .footer {
+            padding: 12px;
+            border-top: 1px solid #1e293b;
+            display: flex;
+            gap: 8px;
+            background: #020617;
+        }
+
+        input {
+            flex: 1;
+            padding: 14px;
+            border-radius: 10px;
+            border: none;
+            outline: none;
+            background: #020617;
+            color: #e5e7eb;
+            border: 1px solid #1e293b;
+
+            font-size: 16px;
+            height: 52px;
+        }
+
+        button {
+            padding: 12px 18px;
+            border-radius: 10px;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            background: #2563eb;
+            color: white;
+        }
+
+        button:hover {
+            background: #1d4ed8;
+        }
+
+        .start-btn {
+            margin-top: 8px;
+            background: #16a34a;
+        }
+
+        .start-btn:hover {
+            background: #15803d;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="chat-container">
+
+    <div class="header">
+        AI Chat
+        <div class="session">
+            Session: <span id="sessionId">not started</span>
+        </div>
+        <button class="start-btn" onclick="startChat()">Start Chat</button>
+    </div>
+
+    <div class="messages" id="messages"></div>
+
+    <div class="footer">
+        <input id="promptInput" placeholder="Type your message..." />
+        <button onclick="sendPrompt()">Send</button>
+    </div>
+
+</div>
+
+<script>
+    let sessionId = null;
+    let eventSource = null;
+
+    const messages = document.getElementById("messages");
+
+    function addMessage(text, type) {
+        const div = document.createElement("div");
+        div.className = "msg " + type;
+        div.innerText = text;
+        messages.appendChild(div);
+        messages.scrollTop = messages.scrollHeight;
+        return div;
+    }
+
+    async function startChat() {
+        const res = await fetch("/api/session", { method: "POST" });
+        const data = await res.json();
+        sessionId = data.sessionId;
+        document.getElementById("sessionId").innerText = sessionId;
+    }
+
+    async function sendPrompt() {
+        if (!sessionId) {
+            alert("Start chat first");
+            return;
+        }
+
+        const input = document.getElementById("promptInput");
+        const prompt = input.value.trim();
+        if (!prompt) return;
+
+        input.value = "";
+
+        addMessage(prompt, "user");
+        const aiMsg = addMessage("", "ai");
+
+        const res = await fetch(`/invoke/${sessionId}/streaming`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ prompt })
+        });
+
+        const data = await res.json();
+        const jobId = data.jobId;
+
+        if (eventSource) eventSource.close();
+
+        eventSource = new EventSource(
+            `/start/${sessionId}/event/${jobId}/stream`
+        );
+
+        eventSource.onmessage = (e) => {
+            aiMsg.innerText += e.data;
+            messages.scrollTop = messages.scrollHeight;
+        };
+
+        eventSource.onerror = () => {
+            eventSource.close();
+        };
+    }
+</script>
+
+</body>
+</html>
